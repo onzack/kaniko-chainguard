@@ -40,6 +40,8 @@ jobs:
   build:
     needs: check-changes
     if: needs.check-changes.outputs.has-changes == 'true'
+    outputs:
+      build-successful: ${{ steps.notify.outputs.successful }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,12 +91,14 @@ jobs:
           org.opencontainers.image.description=${{ steps.commit.outputs.message }}
 
     - name: Notify on success
+      id: notify
       run: |
         echo "✅ Successfully built and pushed image"
         echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}"
         echo "Latest: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
         echo "Target: kaniko-debug"
         echo "Dockerfile: deploy/Dockerfile"
+        echo "successful=true" >> $GITHUB_OUTPUT  
 
   no-changes:
     needs: check-changes
@@ -105,3 +109,20 @@ jobs:
       run: |
         echo "ℹ️ No changes detected in the external repository"
         echo "Skipping build to save resources"
+        
+  scan-image-after-build:
+    needs: build
+    if: needs.build.outputs.build-successful == 'true'
+    runs-on: ubuntu-latest
+    container: ghcr.io/aquasecurity/trivy:latest
+    steps:
+      - name: Scan newly built image
+        run: trivy image ghcr.io/chuantap/chainguard-kaniko-debug:latest
+  
+  scan-image-no-build:
+    needs: no-changes
+    runs-on: ubuntu-latest
+    container: ghcr.io/aquasecurity/trivy:latest
+    steps:
+      - name: Scan existing image
+        run: trivy image ghcr.io/chuantap/chainguard-kaniko-debug:latest
