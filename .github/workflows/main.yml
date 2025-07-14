@@ -1,0 +1,107 @@
+name: Build External Repository with Change Detection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/chainguard-kaniko-debug
+  EXTERNAL_REPO: "chainguard-dev/kaniko"
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has-changes: ${{ steps.check.outputs.changed }}
+    steps:
+    - name: Checkout external repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.EXTERNAL_REPO }}
+        fetch-depth: 0  # Get full history
+
+    - name: Check for changes in last 24 hours
+      id: check
+      run: |
+        # Get commits from last 24 hours
+        RECENT_COMMITS=$(git log --since="24 hours ago" --oneline | wc -l)
+        echo "Recent commits: $RECENT_COMMITS"
+        
+        if [ "$RECENT_COMMITS" -gt 0 ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in the last 24 hours"
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes in the last 24 hours"
+        fi
+
+  build:
+    needs: check-changes
+    if: needs.check-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout external repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.EXTERNAL_REPO }}
+
+    - name: Get commit info
+      id: commit
+      run: |
+        echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+        echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: deploy/Dockerfile
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.date }}
+        target: kaniko-debug
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ env.EXTERNAL_REPO }}
+          org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+          org.opencontainers.image.created=${{ steps.commit.outputs.date }}
+          org.opencontainers.image.description=${{ steps.commit.outputs.message }}
+
+    - name: Notify on success
+      run: |
+        echo "✅ Successfully built and pushed image"
+        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}"
+        echo "Latest: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+        echo "Target: kaniko-debug"
+        echo "Dockerfile: deploy/Dockerfile"
+
+  no-changes:
+    needs: check-changes
+    if: needs.check-changes.outputs.has-changes == 'false'
+    runs-on: ubuntu-latest
+    steps:
+    - name: No changes detected
+      run: |
+        echo "ℹ️ No changes detected in the external repository"
+        echo "Skipping build to save resources"
