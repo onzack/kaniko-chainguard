@@ -1,4 +1,4 @@
-name: Build External Repository with Change Detection
+name: Build image from external repository with change detection
 
 on:
   workflow_dispatch:
@@ -39,7 +39,7 @@ jobs:
 
   build:
     needs: check-changes
-    if: needs.check-changes.outputs.has-changes == 'false'
+    if: needs.check-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
