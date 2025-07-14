@@ -117,7 +117,7 @@ jobs:
     container: ghcr.io/aquasecurity/trivy:latest
     steps:
       - name: Scan newly built image
-        run: trivy image ghcr.io/chuantap/chainguard-kaniko-debug:latest
+        run: trivy image ghcr.io/onzack/chainguard-kaniko-debug:latest
   
   scan-image-no-build:
     needs: no-changes
@@ -125,4 +125,4 @@ jobs:
     container: ghcr.io/aquasecurity/trivy:latest
     steps:
       - name: Scan existing image
-        run: trivy image ghcr.io/chuantap/chainguard-kaniko-debug:latest
+        run: trivy image ghcr.io/onzack/chainguard-kaniko-debug:latest
