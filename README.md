@@ -2,6 +2,15 @@
 
 This repository contains a up-to-date container image of [Kaniko](https://github.com/GoogleContainerTools/kaniko), based on the forked source code that is being maintained and published by [Chainguard](https://github.com/chainguard-dev/kaniko).
 
+## Current Version
+
+**Latest Build:** `latest`  
+**Commit SHA:** `TBD`  
+**Build Date:** `TBD`  
+**Source Repository:** [chainguard-dev/kaniko](https://github.com/chainguard-dev/kaniko)
+
+> This version information is automatically updated when a new image is built.
+
 ## What is Kaniko?
 
 Kaniko is a tool to build container images from a Dockerfile, inside a container or Kubernetes cluster. It doesn't depend on a Docker daemon and executes each command in a Dockerfile completely in userspace. This enables building container images in environments that can't easily or securely run a Docker daemon, such as a standard Kubernetes cluster.
