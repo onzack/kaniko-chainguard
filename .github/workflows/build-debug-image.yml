@@ -3,7 +3,7 @@ name: Build image from external repository with change detection
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: "0 2 * * *"
 
 env:
   REGISTRY: ghcr.io
@@ -15,101 +15,169 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has-changes: ${{ steps.check.outputs.changed }}
+      latest-commit: ${{ steps.check.outputs.latest-commit }}
     steps:
-    - name: Checkout external repository
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ env.EXTERNAL_REPO }}
-        fetch-depth: 0  # Get full history
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+        with:
+          path: current-repo
 
-    - name: Check for changes in last 24 hours
-      id: check
-      run: |
-        # Get commits from last 24 hours
-        RECENT_COMMITS=$(git log --since="24 hours ago" --oneline | wc -l)
-        echo "Recent commits: $RECENT_COMMITS"
-        
-        if [ "$RECENT_COMMITS" -gt 0 ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "Changes detected in the last 24 hours"
-        else
-          echo "changed=false" >> $GITHUB_OUTPUT
-          echo "No changes in the last 24 hours"
-        fi
+      - name: Get last built commit SHA
+        id: last-built
+        run: |
+          if [ -f current-repo/.last-built-commit ]; then
+            LAST_BUILT=$(cat current-repo/.last-built-commit)
+            echo "last-built=$LAST_BUILT" >> $GITHUB_OUTPUT
+            echo "Last built commit: $LAST_BUILT"
+          else
+            echo "last-built=" >> $GITHUB_OUTPUT
+            echo "No previous build found, will build"
+          fi
+
+      - name: Checkout external repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.EXTERNAL_REPO }}
+          fetch-depth: 0 # Get full history
+
+      - name: Check for changes by comparing commit SHAs
+        id: check
+        run: |
+          # Get the latest commit SHA from external repo
+          LATEST_COMMIT=$(git rev-parse HEAD)
+          LATEST_COMMIT_SHORT=$(git rev-parse --short HEAD)
+          echo "latest-commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+          echo "Latest commit in external repo: $LATEST_COMMIT_SHORT"
+
+          # Compare with last built commit
+          LAST_BUILT="${{ steps.last-built.outputs.last-built }}"
+
+          if [ -z "$LAST_BUILT" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "No previous build found - building new image"
+          elif [ "$LATEST_COMMIT" != "$LAST_BUILT" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changes detected: Latest commit ($LATEST_COMMIT_SHORT) differs from last built"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes detected: Latest commit matches last built commit"
+          fi
 
   build:
     needs: check-changes
     if: needs.check-changes.outputs.has-changes == 'true'
     outputs:
       build-successful: ${{ steps.notify.outputs.successful }}
+      commit-sha: ${{ steps.commit.outputs.sha }}
+      commit-date: ${{ steps.commit.outputs.date }}
+      commit-full-sha: ${{ steps.commit.outputs.full-sha }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
-    - name: Checkout external repository
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ env.EXTERNAL_REPO }}
+      - name: Checkout external repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.EXTERNAL_REPO }}
 
-    - name: Get commit info
-      id: commit
-      run: |
-        echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
-        echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
+      - name: Get commit info
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "full-sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+          echo "date-display=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
 
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: deploy/Dockerfile
-        platforms: linux/amd64
-        push: true
-        tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.date }}
-        target: kaniko-debug
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        labels: |
-          org.opencontainers.image.source=https://github.com/${{ env.EXTERNAL_REPO }}
-          org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
-          org.opencontainers.image.created=${{ steps.commit.outputs.date }}
-          org.opencontainers.image.description=${{ steps.commit.outputs.message }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.date }}
+          target: kaniko-debug
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ env.EXTERNAL_REPO }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.commit.outputs.date }}
+            org.opencontainers.image.description=${{ steps.commit.outputs.message }}
 
-    - name: Notify on success
-      id: notify
-      run: |
-        echo "✅ Successfully built and pushed image"
-        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}"
-        echo "Latest: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-        echo "Target: kaniko-debug"
-        echo "Dockerfile: deploy/Dockerfile"
-        echo "successful=true" >> $GITHUB_OUTPUT  
+      - name: Notify on success
+        id: notify
+        run: |
+          echo "✅ Successfully built and pushed image"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}"
+          echo "Latest: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Target: kaniko-debug"
+          echo "Dockerfile: deploy/Dockerfile"
+          echo "successful=true" >> $GITHUB_OUTPUT
+
+      - name: Checkout this repository for updates
+        uses: actions/checkout@v4
+        with:
+          path: current-repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update README with new version
+        run: |
+          cd current-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Update README with new version info
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          COMMIT_DATE="${{ steps.commit.outputs.date-display }}"
+
+          # Use sed to update the version section (handles both TBD and existing values)
+          sed -i.bak "s/\*\*Commit SHA:\*\* \`[^`]*\`/\*\*Commit SHA:\*\* \`$COMMIT_SHA\`/" README.md
+          sed -i.bak "s/\*\*Build Date:\*\* \`[^`]*\`/\*\*Build Date:\*\* \`$COMMIT_DATE\`/" README.md
+          rm README.md.bak
+
+      - name: Update last built commit SHA
+        run: |
+          cd current-repo
+          echo "${{ steps.commit.outputs.full-sha }}" > .last-built-commit
+
+      - name: Commit and push README update
+        run: |
+          cd current-repo
+          git add README.md .last-built-commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "docs(readme): update kaniko version to ${{ steps.commit.outputs.sha }}"
+            git push
+          fi
 
   no-changes:
     needs: check-changes
     if: needs.check-changes.outputs.has-changes == 'false'
     runs-on: ubuntu-latest
     steps:
-    - name: No changes detected
-      run: |
-        echo "ℹ️ No changes detected in the external repository"
-        echo "Skipping build to save resources"
-        
+      - name: No changes detected
+        run: |
+          echo "ℹ️ No changes detected in the external repository"
+          echo "Skipping build to save resources"
+
   scan-image-after-build:
     needs: build
     if: needs.build.outputs.build-successful == 'true'
@@ -118,7 +186,7 @@ jobs:
     steps:
       - name: Scan newly built image
         run: trivy image ghcr.io/onzack/chainguard-kaniko-debug:latest
-  
+
   scan-image-no-build:
     needs: no-changes
     runs-on: ubuntu-latest
