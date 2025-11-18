@@ -148,8 +148,9 @@ jobs:
           COMMIT_DATE="${{ steps.commit.outputs.date-display }}"
 
           # Use sed to update the version section (handles both TBD and existing values)
-          sed -i.bak "s/\*\*Commit SHA:\*\* \`[^`]*\`/\*\*Commit SHA:\*\* \`$COMMIT_SHA\`/" README.md
-          sed -i.bak "s/\*\*Build Date:\*\* \`[^`]*\`/\*\*Build Date:\*\* \`$COMMIT_DATE\`/" README.md
+          # Using single quotes for pattern to prevent shell interpretation, then concatenating variables
+          sed -i.bak 's/\*\*Commit SHA:\*\* `[^`]*`/\*\*Commit SHA:\*\* `'"${COMMIT_SHA}"'`/' README.md
+          sed -i.bak 's/\*\*Build Date:\*\* `[^`]*`/\*\*Build Date:\*\* `'"${COMMIT_DATE}"'`/' README.md
           rm README.md.bak
 
       - name: Update last built commit SHA
