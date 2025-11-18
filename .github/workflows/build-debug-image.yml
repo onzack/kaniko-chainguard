@@ -18,7 +18,7 @@ jobs:
       latest-commit: ${{ steps.check.outputs.latest-commit }}
     steps:
       - name: Checkout this repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: current-repo
 
@@ -35,7 +35,7 @@ jobs:
           fi
 
       - name: Checkout external repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.EXTERNAL_REPO }}
           fetch-depth: 0 # Get full history
@@ -78,7 +78,7 @@ jobs:
 
     steps:
       - name: Checkout external repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.EXTERNAL_REPO }}
 
@@ -132,7 +132,7 @@ jobs:
           echo "successful=true" >> $GITHUB_OUTPUT
 
       - name: Checkout this repository for updates
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: current-repo
           token: ${{ secrets.GITHUB_TOKEN }}
