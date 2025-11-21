@@ -133,6 +133,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.date }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check-changes.outputs.release-tag }}
           target: kaniko-debug
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -167,11 +168,12 @@ jobs:
           # Update README with new version info
           COMMIT_SHA="${{ steps.commit.outputs.sha }}"
           COMMIT_DATE="${{ steps.commit.outputs.date-display }}"
+          RELEASE_TAG="${{ needs.check-changes.outputs.release-tag }}"
 
           # Use sed to update the version section (handles both TBD and existing values)
           # Using single quotes for pattern to prevent shell interpretation, then concatenating variables
-          sed -i.bak 's/\*\*Commit SHA:\*\* `[^`]*`/\*\*Commit SHA:\*\* `'"${COMMIT_SHA}"'`/' README.md
           sed -i.bak 's/\*\*Build Date:\*\* `[^`]*`/\*\*Build Date:\*\* `'"${COMMIT_DATE}"'`/' README.md
+          sed -i.bak 's/\*\*Version:\*\* `[^`]*`/\*\*Version:\*\* `'"${RELEASE_TAG}"'`/' README.md
           rm README.md.bak
 
       - name: Update last built commit SHA
