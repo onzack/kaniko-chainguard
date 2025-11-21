@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has-changes: ${{ steps.check.outputs.changed }}
-      latest-commit: ${{ steps.check.outputs.latest-commit }}
+      release-commit: ${{ steps.release.outputs.commit }}
+      release-tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Checkout this repository
         uses: actions/checkout@v5
@@ -40,27 +41,45 @@ jobs:
           repository: ${{ env.EXTERNAL_REPO }}
           fetch-depth: 0 # Get full history
 
-      - name: Check for changes by comparing commit SHAs
+      - name: Get latest release commit
+        id: release
+        run: |
+          git fetch --tags --force
+          LATEST_TAG=$(git describe --tags "$(git rev-list --tags --max-count=1)")
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "Unable to determine the latest release tag" >&2
+            exit 1
+          fi
+
+          LATEST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG")
+          LATEST_COMMIT_SHORT=$(git rev-parse --short "$LATEST_COMMIT")
+
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+          echo "short=$LATEST_COMMIT_SHORT" >> $GITHUB_OUTPUT
+          echo "Latest release tag: $LATEST_TAG"
+          echo "Latest release commit: $LATEST_COMMIT_SHORT"
+
+      - name: Check for changes by comparing release commit
         id: check
         run: |
-          # Get the latest commit SHA from external repo
-          LATEST_COMMIT=$(git rev-parse HEAD)
-          LATEST_COMMIT_SHORT=$(git rev-parse --short HEAD)
-          echo "latest-commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
-          echo "Latest commit in external repo: $LATEST_COMMIT_SHORT"
-
-          # Compare with last built commit
+          # Get the latest release commit SHA from external repo
+          LATEST_RELEASE="${{ steps.release.outputs.commit }}"
+          LATEST_RELEASE_SHORT="${{ steps.release.outputs.short }}"
           LAST_BUILT="${{ steps.last-built.outputs.last-built }}"
+
+          echo "Latest release commit: $LATEST_RELEASE_SHORT ($LATEST_RELEASE)"
 
           if [ -z "$LAST_BUILT" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "No previous build found - building new image"
-          elif [ "$LATEST_COMMIT" != "$LAST_BUILT" ]; then
+            echo "No previous build found - building new image from release $LATEST_RELEASE_SHORT"
+          elif [ "$LATEST_RELEASE" != "$LAST_BUILT" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected: Latest commit ($LATEST_COMMIT_SHORT) differs from last built"
+            echo "Changes detected: Latest release commit ($LATEST_RELEASE_SHORT) differs from last built ($LAST_BUILT)"
           else
             echo "changed=false" >> $GITHUB_OUTPUT
-            echo "No changes detected: Latest commit matches last built commit"
+            echo "No changes detected: Latest release commit matches last built commit"
           fi
 
   build:
@@ -81,6 +100,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ${{ env.EXTERNAL_REPO }}
+          ref: ${{ needs.check-changes.outputs.release-tag }}
+          fetch-depth: 0
 
       - name: Get commit info
         id: commit
