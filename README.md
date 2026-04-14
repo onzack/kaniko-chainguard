@@ -4,8 +4,8 @@ This repository contains a up-to-date container image of [Kaniko](https://github
 
 ## Current Version
 
-**Version:** `v1.25.12`  
-**Build Date:** `2026-03-20`  
+**Version:** `v1.25.13`  
+**Build Date:** `2026-04-14`  
 **Source Repository:** [chainguard-dev/kaniko](https://github.com/chainguard-dev/kaniko)
 
 > This version information is automatically updated when a new image is built.
